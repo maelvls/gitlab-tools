@@ -178,8 +178,8 @@ GITLAB_SLUG_URLENCODED=$(rawurlencode "$GITLAB_SLUG")
 TMP=/tmp/$(basename "$0")
 mkdir -p "$TMP"
 
-trace curl -sH "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$JOB_ID_LEFT/$ARTIFACT_PATH" >"$TMP/$JOB_ID_LEFT.yaml"
-trace curl -sH "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$JOB_ID_RIGHT/$ARTIFACT_PATH" >"$TMP/$JOB_ID_RIGHT.yaml"
+trace curl -sS --fail -H "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$JOB_ID_LEFT/artifacts/$ARTIFACT_PATH" >"$TMP/$JOB_ID_LEFT.yaml"
+trace curl -sS --fail -H "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$JOB_ID_RIGHT/artifacts/$ARTIFACT_PATH" >"$TMP/$JOB_ID_RIGHT.yaml"
 
 if [ -n "$PREPROCESS" ]; then
     trace eval "$PREPROCESS" <"$TMP/$JOB_ID_LEFT.yaml" >"$TMP/${JOB_ID_LEFT}_tmp.yaml" && mv "$TMP/${JOB_ID_LEFT}_tmp.yaml" "$TMP/${JOB_ID_LEFT}.yaml"

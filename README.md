@@ -64,6 +64,24 @@ Maël Valais, 2020
 
 ## gitlab-diff-jobs
 
+To install it:
+
+```sh
+curl -LO https://raw.githubusercontent.com/maelvls/gitlab-tools/main/gitlab-diff-jobs
+sudo install gitlab-diff-jobs /usr/local
+sudo apt install curl jq perl
+```
+
+Example:
+
+```sh
+gitlab-diff-jobs -d 904642149 905103731 public/index.html --preprocess "sed 's/^ *$//g'" --server https://gitlab.com --repo BuildStream/buildstream
+```
+
+![diff](https://user-images.githubusercontent.com/2195781/101932881-b8d86c80-3bdb-11eb-98fc-5c8e0cd8990f.png)
+
+More documentation is available in `--help`:
+
 ```
 % gitlab-diff-jobs --help
 Does a diff of two artifacts paths given two job ids. The path is relative to
