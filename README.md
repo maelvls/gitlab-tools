@@ -62,3 +62,37 @@ Environment variables:
 Maël Valais, 2020
 ```
 
+## gitlab-diff-jobs
+
+```
+% gitlab-diff-jobs --help
+Does a diff of two artifacts paths given two job ids. The path is relative to
+the root of the artifact archive.
+
+Usage:
+    gitlab-diff-jobs JOB_ID_LEFT JOB_ID_RIGHT ARTIFACT_PATH [options]
+
+Options:
+    --token PAT       The personel access token (or oauth token) to be used to
+                      authenticate requests to the Gitlab API. It is advised to
+                      use the variable GITLAB_TOKEN instead of passing the token
+                      as a CLI argument with --token.
+    --server URL      The Gitlab instance you will be using; you can also use
+                      the variable GITLAB_SERVER to do the same thing.
+                      Default to https://gitlab.com, or the first remote's url
+                      if you are in a git repo.
+    --repo SLUG       The repo slug, i.e., username/repo_name. Can be set using
+                      GITLAB_SLUG. If you are in a git repo that has a remote,
+                      the first remote's url will be used by default.
+    -d                Debug mode. Shows the 'curl' command when API calls are
+                      made.
+    --difftool        The tool to used to display the diff. Default to
+                      "code --diff".
+    --preprocess      Run a command on both files before passing it to the diff
+                      tool. Example: you can remove trailing whitespaces
+                      with --preprocess "sed 's/ *$//'". The command given with
+                      --preprocess is given the file on stdin and must output on
+                      stdout.
+
+Maël Valais, 2020
+```
