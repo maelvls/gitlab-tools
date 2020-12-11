@@ -1,0 +1,215 @@
+#! /bin/bash
+#
+# gitlab-logs searches your logs using a regular expression.
+#
+# Required: jq, curl, perl.
+
+GITLAB_SERVER=${GITLAB_SERVER:-https://gitlab.com}
+GITLAB_TOKEN=${GITLAB_TOKEN}
+GITLAB_SLUG=${GITLAB_SLUG}
+DEBUG=${DEBUG}
+ENV=""
+REGEX="."
+STATUS=${DEBUG}
+
+gray="\033[90m"
+green='\033[92m'
+yel='\033[93m'
+blu='\033[94m'
+end='\033[0m'
+
+help() {
+    cat <<EOF
+Find logs that match a given regex. If no regular expression is given, all the
+recent logs will be returned. When run in an existing gitlab clone, the server
+and repository name will be picked up automatically.
+
+Usage:
+    $(basename "$0") [options]
+
+Options:
+    --regex REGEX     Filter the logs with a simple grep regex.
+                      Example: "UPGRADE FAILED".
+    --env ENV         Only search through the logs of this environment.
+                      Example: "dev".
+    --status STATUS   Only search for jobs that have this status, can be one of
+                      [created, running, success, failed, canceled]. Not enabled
+                      by default.
+    --token PAT       The personel access token (or oauth token) to be used to
+                      authenticate requests to the Gitlab API. It is advised to
+                      use the variable GITLAB_TOKEN instead of passing the token
+                      as a CLI argument with --token.
+    --server URL      The Gitlab instance you will be using; you can also use
+                      the variable GITLAB_SERVER to do the same thing.
+                      Default to https://gitlab.com, or the first remote's url
+                      if you are in a git repo.
+    --repo SLUG       The repo slug, i.e., username/repo_name. Can be set using
+                      GITLAB_SLUG. If you are in a git repo that has a remote,
+                      the first remote's url will be used by default.
+    -d                Debug mode. Shows the 'curl' command when API calls are
+                      made.
+
+Environment variables:
+    GITLAB_TOKEN      The token to use to access the GitLab API v4. To create a
+                      token: https://gitlab.com/profile/personal_access_tokens
+    GITLAB_SERVER     The Gitlab instance you will be using.
+    GITLAB_SLUG       The repo slug.
+
+Maël Valais, 2020
+EOF
+    exit
+}
+
+# Detect the gitlab repo and server if you are in a repo.
+if command -v git >/dev/null && git rev-parse --git-dir >/dev/null; then
+    url=$(git remote get-url --all "$(git remote | head -1)" | sed 's/\.git//')
+    if grep -Eq "^https?://" <<<$url; then
+        GITLAB_SERVER=$(sed 's@^\(https\{0,1\}://[^/]*\)/.*$@\1@' <<<$url)
+        GITLAB_SLUG=$(sed 's@^https\{0,1\}://[^/]*/\(.*\)$@\1@' <<<$url)
+    elif grep -Eq "git@" <<<$url; then
+        GITLAB_SERVER=https://$(sed 's#git@\([^:]*\):.*$#\1#' <<<$url)
+        GITLAB_SLUG=$(sed 's#git@[^:]*:\(.*\)\$#\1#' <<<$url)
+    fi
+fi
+
+while [ $# -ne 0 ]; do
+    case "$1" in
+    -h | --help)
+        help
+        exit 0
+        ;;
+    --regex)
+        shift
+        if test -z "$1"; then
+            printf -- "--regex requires an argument such as \"UPGRADE FAILED\"" >&2
+        fi
+        REGEX="$1"
+        ;;
+    --env)
+        shift
+        if test -z "$1"; then
+            printf -- "--env requires an environment name like 'env'" >&2
+        fi
+        ENV="$1"
+        ;;
+    --server)
+        shift
+        if test -z "$1"; then
+            printf -- "--server requires an argument" >&2
+        fi
+        GITLAB_SERVER="$1"
+        ;;
+    --token)
+        shift
+        if test -z "$1"; then
+            printf -- "--token requires an argument" >&2
+        fi
+        GITLAB_TOKEN="$1"
+        ;;
+    --repo)
+        shift
+        if test -z "$1"; then
+            printf -- "--token requires an argument" >&2
+        fi
+        GITLAB_SLUG="$1"
+        ;;
+    --status)
+        shift
+        if test -z "$1"; then
+            printf -- "--status requires an argument" >&2
+        fi
+        STATUS="$1"
+        ;;
+    -d)
+        DEBUG=1
+        ;;
+    -*)
+        printf -- "unknown flag: %s" "$1" >&2
+        exit 1
+        ;;
+    *)
+        printf -- "unknown positional argument: %s" "$1" >&2
+        exit 1
+        ;;
+    esac
+    shift
+done
+
+if test -z "$GITLAB_TOKEN"; then
+    echo "A token must be given either using GITLAB_TOKEN or --token. Get one at $GITLAB_SERVER/personal_access_tokens" >&2
+    exit 1
+fi
+
+if test -z "$GITLAB_SLUG"; then
+    echo "A repo name must be given using either --repo or GITLAB_SLUG. Example: 'username/reponame'" >&2
+    exit 1
+fi
+
+function trace() {
+    if [ -n "$DEBUG" ]; then
+        printf "%s ${gray}" "$1" >&2
+        LANG=C perl -e 'print join (" ", map { $_ =~ / / ? "\"".$_."\"" : $_} @ARGV)' -- "${@:2}" >&2
+        printf "${end}\n" >&2
+    fi
+    command "$@"
+}
+
+# https://unix.stackexchange.com/questions/364776/how-to-output-a-date-time-as-20-minutes-ago-or-9-days-ago-etc
+hdate() {
+    awk -v date="$(date +%s -d "$1")" -v now="$(date +%s)" '
+    BEGIN {  diff = now - date;
+       if (diff > (24*60*60)) printf "%.0f days ago", diff/(24*60*60);
+       else if (diff > (60*60)) printf "%.0f hours ago", diff/(60*60);
+       else if (diff > 60) printf "%.0f minutes ago", diff/60;
+       else printf "%s seconds ago", diff;
+    }'
+}
+
+# From: https://stackoverflow.com/questions/296536/how-to-urlencode-data-for-curl-command
+rawurlencode() {
+    local string="${1}"
+    local strlen=${#string}
+    local encoded=""
+    local pos c o
+
+    for ((pos = 0; pos < strlen; pos++)); do
+        c=${string:$pos:1}
+        case "$c" in
+        [-_.~a-zA-Z0-9]) o="${c}" ;;
+        *) printf -v o '%%%02x' "'$c" ;;
+        esac
+        encoded+="${o}"
+    done
+    echo "${encoded}"  # You can either set a return variable (FASTER)
+    REPLY="${encoded}" #+or echo the result (EASIER)... or both... :p
+}
+
+GITLAB_SLUG_URLENCODED=$(rawurlencode "$GITLAB_SLUG")
+
+TMP=/tmp/$(basename "$0")
+mkdir -p "$TMP"
+
+if ! trace curl -sS --fail -H "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/deployments?sort=desc&environment=$ENV&status=$STATUS&per_page=100" >"$TMP"/deployments; then
+    echo "To see the curl command that was issued, re-run with -d" >&2
+    exit 1
+fi
+
+SHOW_DATE=$(date --version | grep -q GNU && echo 1)
+
+jq --compact-output -r '.[]' <"$TMP"/deployments | while read -r deployment; do
+    i=$(jq -r '.deployable.id' <<<"$deployment")
+    user=$(jq -r '.user.name' <<<"$deployment")
+    env=$(jq -r '.environment.slug' <<<"$deployment")
+    if [ -n "$SHOW_DATE" ]; then
+        date=$(hdate "$(jq -r '.created_at' <<<"$deployment")")
+    fi
+    trace curl -sH "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$i/trace" >"$TMP/$i.log"
+    if grep -qE "$REGEX" "$TMP/$i.log"; then
+        printf "${yel}%s${end}: ${blu}%s${end} (%s, %s) ${green}%s${end}\n" "$TMP/$i.log" "$GITLAB_SERVER/mpp/datastore/datastore/-/jobs/$i" "$user" "$env" "$date"
+        echo
+        grep -E "$REGEX" "$TMP/$i.log"
+        echo
+    else
+        rm -f "$TMP/$i.log"
+    fi
+done
