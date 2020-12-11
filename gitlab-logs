@@ -189,7 +189,10 @@ GITLAB_SLUG_URLENCODED=$(rawurlencode "$GITLAB_SLUG")
 TMP=/tmp/$(basename "$0")
 mkdir -p "$TMP"
 
-if ! trace curl -sS --fail -H "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/deployments?sort=desc&environment=$ENV&status=$STATUS&per_page=100" >"$TMP"/deployments; then
+if [ -n "$STATUS" ]; then
+    status_query_param="&status=$STATUS"
+fi
+if ! trace curl -sS --fail -H "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/deployments?sort=desc&environment=$ENV${status_query_param}&per_page=100" >"$TMP"/deployments; then
     echo "To see the curl command that was issued, re-run with -d" >&2
     exit 1
 fi
