@@ -1,0 +1,173 @@
+#! /bin/bash
+
+set -e
+
+help() {
+    cat <<EOF
+Does a diff of two artifacts paths given two job ids. The path is relative to
+the root of the artifact archive.
+
+Usage:
+    $(basename "$0") JOB_ID_LEFT JOB_ID_RIGHT ARTIFACT_PATH [options]
+
+Options:
+    --token PAT       The personel access token (or oauth token) to be used to
+                      authenticate requests to the Gitlab API. It is advised to
+                      use the variable GITLAB_TOKEN instead of passing the token
+                      as a CLI argument with --token.
+    --server URL      The Gitlab instance you will be using; you can also use
+                      the variable GITLAB_SERVER to do the same thing.
+                      Default to https://gitlab.com, or the first remote's url
+                      if you are in a git repo.
+    --repo SLUG       The repo slug, i.e., username/repo_name. Can be set using
+                      GITLAB_SLUG. If you are in a git repo that has a remote,
+                      the first remote's url will be used by default.
+    -d                Debug mode. Shows the 'curl' command when API calls are
+                      made.
+    --difftool        The tool to used to display the diff. Default to
+                      "code --diff".
+
+Maël Valais, 2020
+EOF
+    exit
+}
+
+GITLAB_SERVER=${GITLAB_SERVER:-https://gitlab.com}
+GITLAB_TOKEN=${GITLAB_TOKEN}
+GITLAB_SLUG=${GITLAB_SLUG}
+DIFFTOOL=${DIFFTOOL:-"code --diff"}
+JOB_ID_LEFT=
+JOB_ID_RIGHT=
+DEBUG=
+ARTIFACT_PATH=""
+
+gray="\033[90m"
+end='\033[0m'
+trace() {
+    if [ -n "$DEBUG" ]; then
+        printf "%s ${gray}" "$1" >&2
+        LANG=C perl -e 'print join (" ", map { $_ =~ / / ? "\"".$_."\"" : $_} @ARGV)' -- "${@:2}" >&2
+        printf "${end}\n" >&2
+    fi
+    command "$@"
+}
+
+# Detect the gitlab repo and server if you are in a repo.
+if command -v git >/dev/null && git rev-parse --git-dir >/dev/null; then
+    url=$(git remote get-url --all "$(git remote | head -1)" | sed 's/\.git//')
+    if grep -Eq "^https?://" <<<$url; then
+        GITLAB_SERVER=$(sed 's@^\(https\{0,1\}://[^/]*\)/.*$@\1@' <<<$url)
+        GITLAB_SLUG=$(sed 's@^https\{0,1\}://[^/]*/\(.*\)$@\1@' <<<$url)
+    elif grep -Eq "git@" <<<$url; then
+        GITLAB_SERVER=https://$(sed 's#git@\([^:]*\):.*$#\1#' <<<$url)
+        GITLAB_SLUG=$(sed 's#git@[^:]*:\(.*\)\$#\1#' <<<$url)
+    fi
+fi
+
+while [ $# -ne 0 ]; do
+    case "$1" in
+    -h | --help)
+        help
+        exit 0
+        ;;
+    -d)
+        DEBUG=1
+        ;;
+    --server)
+        shift
+        if test -z "$1"; then
+            printf -- "--server requires an argument" >&2
+        fi
+        GITLAB_SERVER="$1"
+        ;;
+    --token)
+        shift
+        if test -z "$1"; then
+            printf -- "--token requires an argument" >&2
+        fi
+        GITLAB_TOKEN="$1"
+        ;;
+    --repo)
+        shift
+        if test -z "$1"; then
+            printf -- "--token requires an argument" >&2
+        fi
+        GITLAB_SLUG="$1"
+        ;;
+    --difftool)
+        shift
+        if test -z "$1"; then
+            printf -- "--difftool requires an argument" >&2
+        fi
+        DIFFTOOL="$1"
+        ;;
+    -*)
+        printf -- "unknown flag: %s" "$1" >&2
+        exit 1
+        ;;
+    *)
+        if [ -z "$JOB_ID_LEFT" ]; then
+            JOB_ID_LEFT="$1"
+        elif [ -z "$JOB_ID_RIGHT" ]; then
+            JOB_ID_RIGHT="$1"
+        elif [ -z "$ARTIFACT_PATH" ]; then
+            ARTIFACT_PATH="$1"
+        else
+            echo "unexpected positional argument: $1" >&2
+            echo "usage: $(basename "$0") JOB_ID_LEFT JOB_ID_RIGHT ARTIFACT_PATH" >&2
+            exit 1
+        fi
+        ;;
+    esac
+    shift
+done
+
+if test -z "$GITLAB_SLUG"; then
+    echo "A repo name must be given using either --repo or GITLAB_SLUG. Example: 'username/reponame'" >&2
+    exit 1
+fi
+
+if test -z "$GITLAB_TOKEN"; then
+    echo "A token must be given either using GITLAB_TOKEN or --token. Get one at $GITLAB_SERVER/personal_access_tokens" >&2
+    exit 1
+fi
+
+if test -z "$GITLAB_TOKEN"; then
+    echo "A token must be given either using GITLAB_TOKEN or --token. Get one at $GITLAB_SERVER/personal_access_tokens" >&2
+    exit 1
+fi
+
+if [ -z "$JOB_ID_LEFT" ] || [ -z "$JOB_ID_RIGHT" ] || [ -z "$ARTIFACT_PATH" ]; then
+    echo "usage: $(basename "$0") JOB_ID_LEFT JOB_ID_RIGHT ARTIFACT_PATH" >&2
+    exit 1
+fi
+
+# From: https://stackoverflow.com/questions/296536/how-to-urlencode-data-for-curl-command
+rawurlencode() {
+    local string="${1}"
+    local strlen=${#string}
+    local encoded=""
+    local pos c o
+
+    for ((pos = 0; pos < strlen; pos++)); do
+        c=${string:$pos:1}
+        case "$c" in
+        [-_.~a-zA-Z0-9]) o="${c}" ;;
+        *) printf -v o '%%%02x' "'$c" ;;
+        esac
+        encoded+="${o}"
+    done
+    echo "${encoded}"  # You can either set a return variable (FASTER)
+    REPLY="${encoded}" #+or echo the result (EASIER)... or both... :p
+}
+
+GITLAB_SLUG_URLENCODED=$(rawurlencode "$GITLAB_SLUG")
+
+TMP=/tmp/$(basename "$0")
+mkdir -p "$TMP"
+
+set -e
+trace curl -sH "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$JOB_ID_LEFT/$ARTIFACT_PATH" >"$TMP/$JOB_ID_LEFT.yaml"
+trace curl -sH "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$JOB_ID_RIGHT/$ARTIFACT_PATH" >"$TMP/$JOB_ID_RIGHT.yaml"
+
+eval "$DIFFTOOL" "$TMP/${JOB_ID_LEFT}.yaml" "$TMP/${JOB_ID_RIGHT}.yaml"

@@ -4,6 +4,8 @@
 #
 # Required: jq, curl, perl.
 
+set -e
+
 GITLAB_SERVER=${GITLAB_SERVER:-https://gitlab.com}
 GITLAB_TOKEN=${GITLAB_TOKEN}
 GITLAB_SLUG=${GITLAB_SLUG}
@@ -145,7 +147,7 @@ if test -z "$GITLAB_SLUG"; then
     exit 1
 fi
 
-function trace() {
+trace() {
     if [ -n "$DEBUG" ]; then
         printf "%s ${gray}" "$1" >&2
         LANG=C perl -e 'print join (" ", map { $_ =~ / / ? "\"".$_."\"" : $_} @ARGV)' -- "${@:2}" >&2
