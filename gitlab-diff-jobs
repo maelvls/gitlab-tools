@@ -26,6 +26,11 @@ Options:
                       made.
     --difftool        The tool to used to display the diff. Default to
                       "code --diff".
+    --preprocess      Run a command on both files before passing it to the diff
+                      tool. Example: you can remove trailing whitespaces
+                      with --preprocess "sed 's/ *$//'". The command given with
+                      --preprocess is given the file on stdin and must output on
+                      stdout.
 
 Maël Valais, 2020
 EOF
@@ -101,6 +106,13 @@ while [ $# -ne 0 ]; do
         fi
         DIFFTOOL="$1"
         ;;
+    --preprocess)
+        shift
+        if test -z "$1"; then
+            printf -- "--preprocess requires an argument" >&2
+        fi
+        PREPROCESS="$1"
+        ;;
     -*)
         printf -- "unknown flag: %s" "$1" >&2
         exit 1
@@ -166,8 +178,12 @@ GITLAB_SLUG_URLENCODED=$(rawurlencode "$GITLAB_SLUG")
 TMP=/tmp/$(basename "$0")
 mkdir -p "$TMP"
 
-set -e
 trace curl -sH "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$JOB_ID_LEFT/$ARTIFACT_PATH" >"$TMP/$JOB_ID_LEFT.yaml"
 trace curl -sH "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$JOB_ID_RIGHT/$ARTIFACT_PATH" >"$TMP/$JOB_ID_RIGHT.yaml"
+
+if [ -n "$PREPROCESS" ]; then
+    eval "$PREPROCESS" <"$TMP/$JOB_ID_LEFT.yaml" >"$TMP/${JOB_ID_LEFT}_processed.yaml"
+    eval "$PREPROCESS" <"$TMP/$JOB_ID_RIGHT.yaml" >"$TMP/${JOB_ID_RIGHT}_processed.yaml"
+fi
 
 eval "$DIFFTOOL" "$TMP/${JOB_ID_LEFT}.yaml" "$TMP/${JOB_ID_RIGHT}.yaml"
