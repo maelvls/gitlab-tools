@@ -182,8 +182,8 @@ trace curl -sH "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/proj
 trace curl -sH "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/jobs/$JOB_ID_RIGHT/$ARTIFACT_PATH" >"$TMP/$JOB_ID_RIGHT.yaml"
 
 if [ -n "$PREPROCESS" ]; then
-    eval "$PREPROCESS" <"$TMP/$JOB_ID_LEFT.yaml" >"$TMP/${JOB_ID_LEFT}_processed.yaml"
-    eval "$PREPROCESS" <"$TMP/$JOB_ID_RIGHT.yaml" >"$TMP/${JOB_ID_RIGHT}_processed.yaml"
+    trace eval "$PREPROCESS" <"$TMP/$JOB_ID_LEFT.yaml" >"$TMP/${JOB_ID_LEFT}_tmp.yaml" && mv "$TMP/${JOB_ID_LEFT}_tmp.yaml" "$TMP/${JOB_ID_LEFT}.yaml"
+    trace eval "$PREPROCESS" <"$TMP/$JOB_ID_RIGHT.yaml" >"$TMP/${JOB_ID_RIGHT}_tmp.yaml" && mv "$TMP/${JOB_ID_RIGHT}_tmp.yaml" "$TMP/${JOB_ID_RIGHT}.yaml"
 fi
 
-eval "$DIFFTOOL" "$TMP/${JOB_ID_LEFT}.yaml" "$TMP/${JOB_ID_RIGHT}.yaml"
+trace eval "$DIFFTOOL" "$TMP/${JOB_ID_LEFT}.yaml" "$TMP/${JOB_ID_RIGHT}.yaml"
