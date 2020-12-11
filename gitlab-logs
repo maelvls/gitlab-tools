@@ -193,7 +193,8 @@ if [ -n "$STATUS" ]; then
     status_query_param="&status=$STATUS"
 fi
 if ! trace curl -sS --fail -H "Authorization: Bearer $GITLAB_TOKEN" "$GITLAB_SERVER/api/v4/projects/$GITLAB_SLUG_URLENCODED/deployments?sort=desc&environment=$ENV${status_query_param}&per_page=100" >"$TMP"/deployments; then
-    echo "To see the curl command that was issued, re-run with -d" >&2
+    [ -n "$DEBUG" ] || echo "To see the curl command that was issued, re-run with -d" >&2
+    cat "$TMP"/deployments
     exit 1
 fi
 
